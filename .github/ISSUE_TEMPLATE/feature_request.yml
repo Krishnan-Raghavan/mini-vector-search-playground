@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest an idea for this project
+labels: [enhancement, good first issue]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Short description of the feature.
+      placeholder: What’s the feature you’d like to see?
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why is this feature important?
+      placeholder: I want this because...
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How could we implement it?
+      placeholder: Possible implementation details...
