@@ -1,0 +1,10 @@
+repos:
+  - repo: local
+    hooks:
+      - id: prevent-chatmodes
+        name: Prevent committing .github/chatmodes/
+        entry: bash scripts/prevent_chatmodes_commit.sh
+        language: script
+        stages: [commit]
+        # run for all files (script will inspect staged files itself)
+        files: ''

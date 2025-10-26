@@ -1,35 +1,63 @@
+# app/store.py
+# Dimension-aware, provider-scoped Chroma store with safe collection names.
+
 import os
 import pathlib
 from typing import List, Dict, Tuple
 import logging
 
+# Disable Chroma/PostHog telemetry as early as possible
+os.environ["CHROMADB_TELEMETRY"] = "False"
+os.environ["CHROMADB_DISABLE_TELEMETRY"] = "1"
+os.environ["POSTHOG_DISABLED"] = "1"
+
 import chromadb
 from chromadb.config import Settings
 
-# --- Config & setup ---
+# -----------------------------
+# Configuration & Initialization
+# -----------------------------
+
 DB_DIR = os.getenv("DB_DIR", "./data")
 pathlib.Path(DB_DIR).mkdir(parents=True, exist_ok=True)
 
-# Disable Chroma telemetry noise
-os.environ.setdefault("CHROMADB_TELEMETRY", "False")
-os.environ.setdefault("CHROMADB_DISABLE_TELEMETRY", "1")
+# Kill Chroma telemetry noise (belt + suspenders)
 logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
 logging.getLogger("chromadb").setLevel(logging.WARNING)
 
-# Create persistent ChromaDB client
 _client = chromadb.PersistentClient(
     path=DB_DIR,
-    settings=Settings(allow_reset=False, anonymized_telemetry=False)
+    settings=Settings(allow_reset=False, anonymized_telemetry=False),
 )
 
-# Use a collection called "documents"
-_collection = _client.get_or_create_collection(
-    name="documents",
-    metadata={"hnsw:space": "cosine"}  # cosine distance metric
-)
+# Collection naming
+# Use only [a-zA-Z0-9_-] and avoid colons to satisfy Chroma name rules.
+COLL_PREFIX = os.getenv("COLLECTION_PREFIX", "documents")
+PROVIDER = os.getenv("EMBED_PROVIDER", "ollama").lower()
 
 
-# --- Validation helpers ---
+def _collection_name(dim: int) -> str:
+    """
+    Safe collection name: <prefix>_<provider>_<dim>
+    - 3-63 chars
+    - starts/ends alphanumeric
+    - only alnum, underscore, hyphen
+    """
+    return f"{COLL_PREFIX}_{PROVIDER}_{dim}"
+
+
+def _collection_for(dim: int):
+    """Get or create a Chroma collection for this provider+dimension."""
+    name = _collection_name(dim)
+    return _client.get_or_create_collection(
+        name=name,
+        metadata={"hnsw:space": "cosine", "provider": PROVIDER, "dim": dim},
+    )
+
+
+# -------------
+# Validations
+# -------------
 def _validate_upsert(ids: List[str], texts: List[str], embeddings: List[List[float]]):
     if not ids or not texts or not embeddings:
         raise ValueError("ids, texts, and embeddings must be non-empty.")
@@ -50,8 +78,7 @@ def _validate_upsert(ids: List[str], texts: List[str], embeddings: List[List[flo
 
 def _normalize_metadatas(metadatas: List[Dict] | None, n: int) -> List[Dict]:
     """
-    Chroma requires each metadata dict to be non-empty.
-    If None or empty, insert {"source": "manual"}.
+    Chroma requires each metadata dict to be non-empty. Ensure at least one key.
     """
     if metadatas is None:
         return [{"source": "manual"} for _ in range(n)]
@@ -67,22 +94,30 @@ def _normalize_metadatas(metadatas: List[Dict] | None, n: int) -> List[Dict]:
     return fixed
 
 
-# --- Public API ---
+# -------------
+# Public API
+# -------------
 def upsert_texts(
     ids: List[str],
     texts: List[str],
     embeddings: List[List[float]],
     metadatas: List[Dict] | None = None,
 ) -> int:
-    """Insert or update documents with embeddings. Returns number of records upserted."""
+    """
+    Insert or update documents with embeddings into a provider+dimension-scoped collection.
+    Returns number of records upserted.
+    """
     _validate_upsert(ids, texts, embeddings)
     metadatas = _normalize_metadatas(metadatas, len(texts))
+
+    dim = len(embeddings[0])
+    coll = _collection_for(dim)
 
     BATCH = 128
     total = 0
     for i in range(0, len(texts), BATCH):
         sl = slice(i, i + BATCH)
-        _collection.upsert(
+        coll.upsert(
             ids=ids[sl],
             documents=texts[sl],
             embeddings=embeddings[sl],
@@ -92,18 +127,22 @@ def upsert_texts(
     return total
 
 
-def query_texts(query_embedding: List[float], k: int = 5) -> Tuple[List[str], List[str], List[float], List[Dict]]:
+def query_texts(
+    query_embedding: List[float],
+    k: int = 5,
+) -> Tuple[List[str], List[str], List[float], List[Dict]]:
     """
     Query top-k similar documents for a given embedding.
-    Returns (ids, documents, similarities, metadatas).
+    Returns (ids, documents, similarities, metadatas) from the matching provider+dimension collection.
     """
     if not query_embedding or not isinstance(query_embedding, list):
         raise ValueError("query_embedding must be a non-empty list of floats.")
-
-    # Cap k between 1 and 50
     k = max(1, min(int(k), 50))
 
-    res = _collection.query(query_embeddings=[query_embedding], n_results=k)
+    dim = len(query_embedding)
+    coll = _collection_for(dim)
+
+    res = coll.query(query_embeddings=[query_embedding], n_results=k)
 
     ids = res.get("ids", [[]])[0]
     docs = res.get("documents", [[]])[0]
@@ -116,7 +155,48 @@ def query_texts(query_embedding: List[float], k: int = 5) -> Tuple[List[str], Li
 
 
 def count() -> int:
-    """Return number of documents stored in collection."""
-    c = _collection.count()
-    return int(c) if isinstance(c, int) else int(c or 0)
+    """
+    Sum counts across all collections for the current provider,
+    e.g., documents_ollama_768, documents_ollama_4 (tests), etc.
+    """
+    total = 0
+    try:
+        for coll in _client.list_collections():
+            name = getattr(coll, "name", None) or getattr(coll, "id", None) or ""
+            if name.startswith(f"{COLL_PREFIX}_{PROVIDER}_"):
+                try:
+                    total += int(_client.get_or_create_collection(name=name).count())
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return total
 
+
+def drop_collection(dim: int | None = None) -> int:
+    """
+    Delete a specific provider+dim collection (if dim given),
+    or all collections for this provider (dangerous).
+    Returns number of collections deleted.
+    """
+    deleted = 0
+    if dim is not None:
+        try:
+            _client.delete_collection(_collection_name(dim))
+            return 1
+        except Exception:
+            return 0
+
+    # Danger zone: delete all for this provider
+    try:
+        for coll in _client.list_collections():
+            name = getattr(coll, "name", None) or getattr(coll, "id", None) or ""
+            if name.startswith(f"{COLL_PREFIX}_{PROVIDER}_"):
+                try:
+                    _client.delete_collection(name)
+                    deleted += 1
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return deleted
