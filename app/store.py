@@ -1,11 +1,18 @@
+# app/store.py
+# Dimension-aware, provider-scoped Chroma store with safe collection names.
+
 import os
 import pathlib
 from typing import List, Dict, Tuple
 import logging
 
+# Disable Chroma/PostHog telemetry as early as possible
+os.environ["CHROMADB_TELEMETRY"] = "False"
+os.environ["CHROMADB_DISABLE_TELEMETRY"] = "1"
+os.environ["POSTHOG_DISABLED"] = "1"
+
 import chromadb
 from chromadb.config import Settings
-
 
 # -----------------------------
 # Configuration & Initialization
@@ -15,8 +22,6 @@ DB_DIR = os.getenv("DB_DIR", "./data")
 pathlib.Path(DB_DIR).mkdir(parents=True, exist_ok=True)
 
 # Kill Chroma telemetry noise (belt + suspenders)
-os.environ.setdefault("CHROMADB_TELEMETRY", "False")
-os.environ.setdefault("CHROMADB_DISABLE_TELEMETRY", "1")
 logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
 logging.getLogger("chromadb").setLevel(logging.WARNING)
 
@@ -26,13 +31,19 @@ _client = chromadb.PersistentClient(
 )
 
 # Collection naming
+# Use only [a-zA-Z0-9_-] and avoid colons to satisfy Chroma name rules.
 COLL_PREFIX = os.getenv("COLLECTION_PREFIX", "documents")
 PROVIDER = os.getenv("EMBED_PROVIDER", "ollama").lower()
 
 
 def _collection_name(dim: int) -> str:
-    """documents:<provider>:<dim>"""
-    return f"{COLL_PREFIX}:{PROVIDER}:{dim}"
+    """
+    Safe collection name: <prefix>_<provider>_<dim>
+    - 3-63 chars
+    - starts/ends alphanumeric
+    - only alnum, underscore, hyphen
+    """
+    return f"{COLL_PREFIX}_{PROVIDER}_{dim}"
 
 
 def _collection_for(dim: int):
@@ -146,18 +157,16 @@ def query_texts(
 def count() -> int:
     """
     Sum counts across all collections for the current provider,
-    e.g., documents:ollama:768, documents:ollama:4 (test), etc.
+    e.g., documents_ollama_768, documents_ollama_4 (tests), etc.
     """
     total = 0
     try:
         for coll in _client.list_collections():
-            # Some backends return objects with .name; be defensive
             name = getattr(coll, "name", None) or getattr(coll, "id", None) or ""
-            if name.startswith(f"{COLL_PREFIX}:{PROVIDER}:"):
+            if name.startswith(f"{COLL_PREFIX}_{PROVIDER}_"):
                 try:
                     total += int(_client.get_or_create_collection(name=name).count())
                 except Exception:
-                    # If one collection has issues, keep going
                     continue
     except Exception:
         pass
@@ -182,7 +191,7 @@ def drop_collection(dim: int | None = None) -> int:
     try:
         for coll in _client.list_collections():
             name = getattr(coll, "name", None) or getattr(coll, "id", None) or ""
-            if name.startswith(f"{COLL_PREFIX}:{PROVIDER}:"):
+            if name.startswith(f"{COLL_PREFIX}_{PROVIDER}_"):
                 try:
                     _client.delete_collection(name)
                     deleted += 1
@@ -191,4 +200,3 @@ def drop_collection(dim: int | None = None) -> int:
     except Exception:
         pass
     return deleted
-
