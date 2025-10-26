@@ -16,6 +16,29 @@ Perfect as a Hacktoberfest starter project 🎉
 - Simple browser UI + JSON API
 - Lightweight persistence with **ChromaDB**
 
+## Chatmodes (example + local workflow)
+
+This repository includes a committed, sanitized example chatmode at `.github/chatmodes/example.chatmode.md` to document the format.
+
+Personal chatmodes (your local agent/assistant configurations) are intended to remain local and out of version control. To keep real chatmodes private and avoid accidental commits:
+
+- The repository `.gitignore` already excludes `.github/chatmodes/`.
+- If you want a safety guard, install the `pre-commit` tool and run `pre-commit install` — this repo includes a `pre-commit` config that prevents committing files inside `.github/chatmodes/`.
+
+Quick setup:
+
+```bash
+# install pre-commit (if you don't have it)
+pip install --user pre-commit
+
+# install hooks for this repo (run once per developer)
+pre-commit install
+
+# Now commits that include .github/chatmodes/ will be blocked.
+```
+
+If you prefer not to use `pre-commit`, keep using `.gitignore` and avoid staging files from `.github/chatmodes/`.
+
 ---
 
 ## 🛠 Quickstart (Local)
