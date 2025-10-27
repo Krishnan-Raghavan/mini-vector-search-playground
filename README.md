@@ -78,3 +78,12 @@ cp .env.example .env
 # 5. Run server
 uvicorn app.main:app --reload --port 8080
 
+## 🧰 Developer Shortcuts (Makefile)
+
+Build and run locally using `make`:
+
+```bash
+make build
+make run
+# or for OpenAI provider
+make run-openai
