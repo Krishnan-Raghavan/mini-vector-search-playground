@@ -37,6 +37,35 @@ pre-commit install
 # Now commits that include .github/chatmodes/ will be blocked.
 ```
 
+---
+
+## Agent modes template (repository)
+
+I maintain a separate repository with a curated set of agent/chatmode templates you can reuse in new projects. It's published here:
+
+- https://github.com/Krishnan-Raghavan/agent-modes-templates
+
+How to use it
+
+1. Clone the templates repo and copy the mode(s) you want into your project's `.github/chatmodes/` directory (the project `.gitignore` already keeps local chatmodes out of version control):
+
+```bash
+# clone the templates (SSH)
+git clone git@github.com:Krishnan-Raghavan/agent-modes-templates.git ~/agent-modes-templates
+
+# copy an example into this repo's local chatmodes folder
+mkdir -p .github/chatmodes
+cp ~/agent-modes-templates/simple-coding-agent.chatmode.md .github/chatmodes/my.chatmode.md
+${EDITOR:-nano} .github/chatmodes/my.chatmode.md
+```
+
+2. Alternatively, browse the templates on GitHub and copy-paste a sanitized template into `.github/chatmodes/`.
+
+Notes
+- The template repo is published under the Apache-2.0 license.
+- Keep any secrets or API keys out of chatmode files. They should remain local and never be committed.
+
+
 If you prefer not to use `pre-commit`, keep using `.gitignore` and avoid staging files from `.github/chatmodes/`.
 
 Copying the example to a local chatmode
