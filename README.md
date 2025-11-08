@@ -59,6 +59,22 @@ cp ~/agent-modes-templates/simple-coding-agent.chatmode.md .github/chatmodes/my.
 ${EDITOR:-nano} .github/chatmodes/my.chatmode.md
 ```
 
+Makefile helper
+
+If you'd rather use Make, a small target is provided in the repository root:
+
+```bash
+# sync all templates from your local clone into this repo's .github/chatmodes/
+make sync-chatmodes
+```
+
+This runs `scripts/sync-chatmodes.sh -a`. If you don't have a local clone of the templates repo, clone it first:
+
+```bash
+git clone git@github.com:Krishnan-Raghavan/agent-modes-templates.git ~/agent-modes-templates
+```
+
+
 2. Alternatively, browse the templates on GitHub and copy-paste a sanitized template into `.github/chatmodes/`.
 
 Notes
