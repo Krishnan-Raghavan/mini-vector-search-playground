@@ -1,3 +1,13 @@
+SHELL := /bin/bash
+.PHONY: help sync-chatmodes
+
+help:
+	@echo "Make targets:"
+	@echo "  sync-chatmodes   - Copy chatmode templates from your local templates clone into .github/chatmodes/"
+
+sync-chatmodes:
+	@echo "Syncing chatmodes from ~/agent-modes-templates into .github/chatmodes/"
+	@./scripts/sync-chatmodes.sh -a || (echo "If you don't have a local clone, run: git clone git@github.com:Krishnan-Raghavan/agent-modes-templates.git ~/agent-modes-templates" && exit 1)
 # --------------------------------------
 # Makefile for Mini Vector Search Playground
 # --------------------------------------
